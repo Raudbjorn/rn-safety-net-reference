@@ -9,6 +9,16 @@ The point is not the logbook. The point is the *shape*: every behaviour is a num
 requirement is proven by the cheapest test that can prove it, a script fails the build when one is
 unproven, and a second script proves the tests can actually fail.
 
+## Where to look first
+
+| To see | Look at |
+|---|---|
+| One feature delivered by role-limited agents | [PR #1](https://github.com/Raudbjorn/rn-safety-net-reference/pull/1): four commits, each from one role |
+| The pipeline rejecting a weakened test | [PR #2](https://github.com/Raudbjorn/rn-safety-net-reference/pull/2), a staged draft: one loosened assertion, everything green except the mutation check |
+| What the agents were told and what they reported | `docs/linear-trail/` (a copy of the Linear issues and comments) and `.claude/agents/` |
+| What keeps a role inside its lane | "Enforcement added after the run", below |
+| What none of this proves | "Not claimed", at the end |
+
 ## The loop
 
 ```
@@ -17,6 +27,7 @@ specs/offline-drill-sync.md      EARS requirements with stable IDs (REQ-DRILL-00
         v
 npm run trace                    fails if a requirement has no test, or a test cites an unknown ID
 npm run fault:check              breaks the code on purpose, in a throwaway copy; the suite must go red
+scripts/check-evidence.sh        fails a commit that rewrites an existing test, requirement or mutant
 ```
 
 | Layer | Proves | Tool | Command | Speed |
@@ -46,10 +57,14 @@ server          Express gateway with test-only fault hooks (off unless FAULTS=1)
 firestore.rules client-SDK authorisation (REQ-AUTHZ-*)
 tests           unit, component, api, rules
 .maestro        three device flows (offline -> online; lost reply -> retry)
-scripts         check-traceability, fault-inject, e2e.sh, ci-local.sh (the two PR-gating CI jobs on a clean checkout of one commit)
-.github         ci.yml (3 jobs), claude-review.yml (optional)
-.claude         a PreToolUse hook that stops an AI agent editing generated / CI / guardrail files;
-                agents/ (test-author, implementer, reviewer) and commands/linear-issue.md (the orchestration)
+scripts         check-traceability, fault-inject, check-evidence (existing evidence is append-only, one lane
+                per commit), selftest-guards (tests the hooks and that gate), e2e.sh, ci-local.sh (the two
+                PR-gating CI jobs on a clean checkout of one commit)
+.github         ci.yml (3 jobs), claude-review.yml (optional), CODEOWNERS
+.claude         hooks/ guard-paths.sh (who may write where, per role) and guard-bash.sh (no merge, push
+                or Done from an agent); agents/ (spec-checker, test-author, implementer, mutant-author,
+                ci-triager, reviewer); commands/linear-issue.md (the orchestration)
+docs            linear-trail/ (a copy of the Linear issues and comments for RAU-5)
 ```
 
 ## Verification record
@@ -64,7 +79,7 @@ Run on one machine (Linux, Node 24.22.2, Java 25) on 2026-11-11, from the final 
 | `npm run rules:ci` (Firestore emulator 1.22.0) | 17 passed |
 | `npm run trace` | 12 of 12 requirements have a test |
 | `npm run fault:check` | baseline green for jest, api, rules; 9 of 9 mutations killed, each by the test for the requirement it breaks (`--why` lists them) |
-| `.claude/hooks/guard-paths.sh` | exercised with 9 simulated hook inputs, including a `../` traversal and malformed input |
+| `.claude/hooks/*.sh`, `scripts/check-evidence.sh` | `scripts/selftest-guards.sh`: 63 cases (31 path hook, 20 Bash hook, 12 evidence gate against a scratch repository); `shellcheck` clean. Until 2026-11-11 this row recorded 9 hand-run inputs to the path hook; the cases are now a script in the `fast` job |
 | `scripts/e2e.sh` | plumbing only, with stand-ins for `adb` and `maestro` (see below) |
 | both workflows | `actionlint` v1.7.12: no findings |
 
@@ -98,9 +113,33 @@ Left for a person: RAU-10 (a retry pressed while a sync is running waits for the
 an error value; refused-retry message untested; no mutants for the three new requirements in
 `scripts/fault-inject.ts`), and the merge itself.
 
+The three agent files used in this run are unchanged since. `commands/linear-issue.md` has been rewritten
+since (see the next section), so the orchestration as it now reads is not the one that ran.
+
 The branch `staged/weakened-assertion` is a deliberate counter-example, labelled as staged in its commit
 message: it loosens one assertion for REQ-DRILL-006. Typecheck, lint and every test pass; only the
 mutation check fails (M2 survives).
+
+## Enforcement added after the run (2026-11-11)
+
+The RAU-5 run rested on instructions and on reading each commit's diff afterwards. These now stand
+behind the roles:
+
+| Control | What it refuses | Where | How it was checked |
+|---|---|---|---|
+| Write lanes | A subagent using Edit or Write outside its lane: `test-author` has `tests/` and `specs/`, `implementer` has `src/` and `server/`, `mutant-author` has `scripts/fault-inject.ts`, the three reading roles have nothing. A subagent with no lane defined is refused. | `.claude/hooks/guard-paths.sh` | 31 simulated inputs. Through Claude Code 2.1.321 in a scratch copy: a real `implementer` subagent was refused `tests/unit/canary.test.ts` and allowed `src/canary.ts`; a real `test-author` got the reverse; the main session was refused `specs/TRACE.md`. |
+| A person's steps | From any session: `gh pr merge`, `gh pr review`, a Linear status of Done or Cancelled. From a subagent: also `git push`, `merge`, `rebase` and `gh pr create`. From a reading role: also `git commit`. | `.claude/hooks/guard-bash.sh` | 20 simulated inputs. Through Claude Code: a real `test-author` subagent was refused `git push origin HEAD`. |
+| Evidence gate | A commit that removes or rewrites a line of an existing test, requirement, Maestro flow or mutant without an `Evidence-Change: <reason>` trailer, and a commit that spans two lanes (evidence, mutants, product, infrastructure). | `scripts/check-evidence.sh`: first step of the `fast` job on pull requests and of `scripts/ci-local.sh` | 12 cases against a scratch repository. On the real branches: the four RAU-5 commits pass, one lane each; `staged/weakened-assertion` fails on its one rewritten assertion, with no mutant involved. |
+| Rules on `main` | For everyone, the owner included: a direct push, a force push, deletion, and a merge while a gating job is red or stale or a review thread is open. For everyone but the owner: a merge without a code-owner approval. The two gating checks only count when GitHub Actions reports them. | Two GitHub rulesets, `.github/CODEOWNERS` | Read back with `gh api repos/Raudbjorn/rn-safety-net-reference/rules/branches/main`. Not tried by attempting a forbidden push or merge. |
+| Actions allow-list | A workflow using an action that is not GitHub's own or one of the two third-party actions in `ci.yml` and `claude-review.yml`, or one not pinned to a commit SHA. | Repository Actions settings | Read back with `gh api`. |
+
+The self-test was itself checked the way the suite is: 13 deliberate breaks of the three scripts in a
+throwaway copy (a lane widened, a refusal turned into a pass, `../` no longer normalised, removals
+ignored, and so on), and it went red for each. A fourteenth break survived and showed a branch of the
+gate that could never be reached; that branch was removed. The 13 are not kept as a script.
+
+`commands/linear-issue.md` now starts by proving the hooks are live (it tries to write
+`specs/TRACE.md` and stops if that is allowed), which is the failure that went unnoticed in the run.
 
 ## Not claimed
 
@@ -113,17 +152,30 @@ mutation check fails (M2 survives).
   on `main` and on PR #1, red on the staged draft PR #2 at the mutation check only (M2 survived). The
   emulator job is skipped on pushes and PRs. `actionlint` checks syntax and
   expressions, not whether the jobs succeed. `scripts/ci-local.sh` runs the same commands as the `fast` and
-  `rules` jobs, on this machine's OS, Node 24 and Java 25, not on the runner image; it is a stand-in, and the
-  two workflow files were edited after `actionlint` last ran.
+  `rules` jobs, on this machine's OS, Node 24 and Java 25, not on the runner image; it is a stand-in.
+  `actionlint` v1.7.12 was run again on both workflow files after their last edit (2026-11-11): no findings.
 - iOS. `setAirplaneMode` is Android-only in Maestro, so flow 02 has no iOS equivalent here.
-- The hook was tested as a script with simulated input, not through Claude Code.
-- The hook deliberately does **not** block `tests/` or `specs/`: an agent has to write tests alongside the
-  change. So nothing here stops an agent weakening an existing assertion. What catches that is the
-  mutation check (a weakened test stops killing its mutant), the traceability gate, and human review of any
-  changed assertion. Branch protection plus CODEOWNERS on `tests/`, `specs/` and `.github/` is the missing
-  control and is not set up.
+- A delivery with the hooks and the evidence gate switched on. They were exercised in two short scratch
+  sessions and by the self-test (see "Enforcement added after the run"); no feature has been delivered
+  under them. (Until 2026-11-11 this line said the hook had only been fed simulated input.)
+- The three agents added on 2026-11-11, `spec-checker`, `mutant-author` and `ci-triager`, on a real issue.
+  Their frontmatter parses (`claude plugin validate .claude/agents`); that is all that is known about
+  them. The rewritten orchestration in `commands/linear-issue.md` is untried as well.
+- A forbidden push or merge against the rules on `main`. They were read back from the API, not provoked.
 
 **What the evidence does not prove**
+- That a test was not weakened. The evidence gate sees removed and rewritten lines. A test can be
+  disabled by *adding* a line (an early `return`, a mock that swallows the behaviour), and a reformat
+  trips the gate without weakening anything. The mutation check and review are still what answer that
+  question. (Until 2026-11-11 this section said branch protection and CODEOWNERS were the missing
+  control; both are now set.)
+- That a role cannot leave its lane. The path hook covers the file-editing tools. A role with Bash can
+  still write anywhere with `sed` or a redirect; the evidence gate then judges the commit, not the
+  attempt. `guard-bash.sh` matches command text, so an indirect spelling (a script file, an alias) passes.
+- That the actor was a person. The rules on `main` cannot tell an agent from the owner, because both act
+  with the owner's login. They stop a red, stale or unreviewed merge, not the wrong hand on a green one.
+- That the mutation check covers the new feature. RAU-11 is still open: there is no mutant for
+  REQ-DRILL-010 to 012. `mutant-author` is the role meant to add them and has not run.
 - The agent run was one run, on one machine, on one small feature. It says nothing about how often a
   run goes this way.
 - The role boundaries (the test author does not touch `src/`, implementers do not touch `tests/` or
@@ -157,6 +209,13 @@ mutation check fails (M2 survives).
 - Timings are from a single run.
 
 **Residual risk this does not remove**
+- **A known defect, reproduced and not fixed.** `record()` and `retryRejected()` publish the new state
+  in memory before the storage write lands. A flush that starts in that window sends the drill while
+  storage still holds the old state: nothing at all for a new drill, `rejected` for a retried one.
+  REQ-DRILL-001 and REQ-DRILL-010 forbid exactly that. Every test awaits one call before starting the
+  next, so none of them sees it, and no mutant covers it. An automated review raised it on PR #1 on
+  2026-11-11; it was then reproduced with a slow store in a throwaway copy of the branch, for both
+  methods. `record()` on `main` has it too. It needs an issue and a failing test before a fix.
 - Green tests here do not make a different codebase safe; they show the method works on this one.
 - CI is pinned to Java 21 and `ubuntu-24.04`; I ran Java 25 locally. The `rules` job has passed on Java 21
   in hosted CI once; the Android job's Java 21 build is still untested.
@@ -169,5 +228,11 @@ mutation check fails (M2 survives).
   from `package-lock.json`.
 - `firebase-tools` downloads the Firestore emulator jar to `~/.cache/firebase/emulators` on first use.
 - CI downloads Maestro 2.12.1 (~350 MB) and verifies its SHA-256 before use.
+- The first two steps of the `fast` job need `git` history (`fetch-depth: 0`) and `jq`; both are on the
+  runner image. Nothing was added to `package.json`.
+- On GitHub: two rulesets on `main`, an Actions allow-list with SHA pinning required, merged branches
+  deleted automatically, Projects switched off. These live in repository settings, not in this tree;
+  the pull request that added this section lists the calls that made them.
+- `docs/linear-trail/` is a one-off copy. Nothing regenerates it.
 - `claude-review.yml` needs an `ANTHROPIC_API_KEY` secret. Use a key from a dedicated Console workspace with
   its own spend limit. The job is skipped unless the repository variable `CLAUDE_REVIEW_ENABLED` is `true`; it gates nothing.
