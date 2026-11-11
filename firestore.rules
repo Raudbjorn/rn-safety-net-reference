@@ -1,0 +1,40 @@
+rules_version = '2';
+
+// Data model (illustrative):
+//   vessels/{vesselId}/crew/{uid}      { active: boolean }   written by the backend only
+//   vessels/{vesselId}/drills/{drillId}  the drill record, document id == record.id
+//
+// These rules govern CLIENT SDK traffic only. Server code using the Admin SDK / a service account
+// bypasses them entirely, so anything the backend writes needs its own authorisation checks.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isActiveCrew(vesselId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/vessels/$(vesselId)/crew/$(request.auth.uid))
+        && get(/databases/$(database)/documents/vessels/$(vesselId)/crew/$(request.auth.uid)).data.active == true;
+    }
+
+    // A user may read their own membership record; nobody can write it from a client.
+    match /vessels/{vesselId}/crew/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    match /vessels/{vesselId}/drills/{drillId} {
+      allow read: if isActiveCrew(vesselId);
+
+      // REQ-AUTHZ-001: only active crew of THIS vessel, and the body must agree with the path.
+      allow create: if isActiveCrew(vesselId)
+        && request.resource.data.vesselId == vesselId
+        && request.resource.data.id == drillId;
+
+      // REQ-AUTHZ-002: append-only.
+      allow update, delete: if false;
+    }
+  }
+}

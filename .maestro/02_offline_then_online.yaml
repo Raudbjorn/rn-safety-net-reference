@@ -1,0 +1,22 @@
+# REQ-DRILL-003, REQ-DRILL-004: record with no connectivity -> shown as pending, never as synchronised;
+# when connectivity returns it is sent without the user doing anything.
+# `setAirplaneMode` is Android-only in Maestro.
+appId: dev.example.safetynet
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Online"
+    timeout: 20000
+- setAirplaneMode: enabled
+- extendedWaitUntil:
+    visible: "Offline"
+    timeout: 20000
+- tapOn:
+    id: "record-fire"
+- assertVisible: "Pending: 1, Synced: 0, Rejected: 0"
+- assertVisible: "fire - pending"
+- setAirplaneMode: disabled
+- extendedWaitUntil:
+    visible: "Pending: 0, Synced: 1, Rejected: 0"
+    timeout: 45000

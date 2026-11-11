@@ -1,0 +1,42 @@
+# Optional. An AI review is advice on the diff, not a gate: the required checks are the tests in ci.yml.
+#
+# Cost and blast-radius controls, in order of importance:
+#   1. The key (ANTHROPIC_API_KEY) belongs to a dedicated Anthropic Console WORKSPACE that has its own
+#      spend limit, so a runaway loop is capped at that workspace, not at the organisation.
+#   2. Same-repo pull requests only: fork PRs do not receive secrets, so the job is skipped for them.
+#   3. Least privilege below: read the code, comment on the PR, nothing else. No push, no merge.
+#   4. --max-turns bounds a single run.
+# `anthropic_federation_rule_id` + `anthropic_organization_id` exist as inputs of this action for
+# workload-identity federation (no long-lived key in GitHub at all). Read from action.yml; not tested here.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1 (floating tag, resolved 2026-11-11)
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Review this pull request against specs/*.md. For each changed behaviour say which REQ-* it
+            touches and whether a test in tests/ proves it. Flag any changed test assertion and say what
+            reasoning the change needs. Do not suggest style changes. Do not edit files.
+          claude_args: --max-turns 8

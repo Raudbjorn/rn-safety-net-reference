@@ -1,0 +1,14 @@
+# Baseline: with connectivity, a recorded drill reaches the gateway and shows as synchronised.
+# Run by scripts/e2e.sh, which starts a fresh gateway and afterwards checks it holds exactly one record.
+appId: dev.example.safetynet
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Online"
+    timeout: 20000
+- tapOn:
+    id: "record-fire"
+- extendedWaitUntil:
+    visible: "Pending: 0, Synced: 1, Rejected: 0"
+    timeout: 15000

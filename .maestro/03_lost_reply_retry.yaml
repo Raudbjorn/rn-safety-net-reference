@@ -1,0 +1,20 @@
+# REQ-DRILL-006: the gateway stores the drill and then drops the connection (scripts/e2e.sh arms this
+# before the flow starts). The app must keep the drill pending, retry the SAME id, and end synchronised.
+# After the flow, scripts/e2e.sh asserts the gateway holds exactly one record.
+appId: dev.example.safetynet
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Online"
+    timeout: 20000
+- tapOn:
+    id: "record-fire"
+- extendedWaitUntil:
+    visible: "Pending: 1, Synced: 0, Rejected: 0"
+    timeout: 15000
+- tapOn:
+    id: "sync-now"
+- extendedWaitUntil:
+    visible: "Pending: 0, Synced: 1, Rejected: 0"
+    timeout: 15000

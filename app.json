@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "Safety Net Reference",
+    "slug": "rn-safety-net-reference",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "android": {
+      "package": "dev.example.safetynet"
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ]
+  }
+}

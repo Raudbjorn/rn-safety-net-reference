@@ -1,0 +1,54 @@
+{
+  "name": "rn-safety-net-reference",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "license": "MIT",
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-community/netinfo": "12.0.1",
+    "expo": "^58.0.23",
+    "expo-build-properties": "~58.0.12",
+    "expo-crypto": "~58.0.7",
+    "expo-status-bar": "~58.0.4",
+    "express": "^5.3.0",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "@testing-library/react-native": "^14.1.0",
+    "@types/express": "^5.0.6",
+    "@types/jest": "30.0.0",
+    "@types/node": "^24.19.2",
+    "@types/react": "~19.3.0",
+    "eslint": "^10.14.0",
+    "firebase": "^13.2.0",
+    "firebase-tools": "^15.35.0",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.14",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2"
+  },
+  "scripts": {
+    "start": "expo start",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "jest",
+    "test:api": "tsx --test tests/api/*.test.ts",
+    "test:rules": "tsx --test tests/rules/*.test.ts",
+    "rules:ci": "firebase emulators:exec --only firestore --project demo-safety-net \"npm run test:rules\"",
+    "trace": "tsx scripts/check-traceability.ts",
+    "trace:write": "tsx scripts/check-traceability.ts --write",
+    "test:fast": "npm run typecheck && npm run lint && npm test && npm run test:api && npm run trace",
+    "gateway": "tsx server/main.ts",
+    "e2e": "bash scripts/e2e.sh",
+    "fault:check": "tsx scripts/fault-inject.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+coverage/
+reports/
+android/
+ios/
+*.log
+.env
+.env.*
+!.env.example
+firestore-debug.log
+firebase-debug.log
+ui-debug.log
