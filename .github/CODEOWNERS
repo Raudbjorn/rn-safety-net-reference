@@ -1,0 +1,14 @@
+# Who reviews what. GitHub requests these reviews on every pull request; they are only *required*
+# where branch protection on main says so (see README, "Repository settings").
+*                       @Raudbjorn
+
+# The parts that decide whether the code is believed. Listed so the intent survives a second owner.
+/tests/                 @Raudbjorn
+/specs/                 @Raudbjorn
+/.maestro/              @Raudbjorn
+/firestore.rules        @Raudbjorn
+/scripts/               @Raudbjorn
+/.github/               @Raudbjorn
+/.claude/               @Raudbjorn
+/package.json           @Raudbjorn
+/package-lock.json      @Raudbjorn

@@ -33,6 +33,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0 # the evidence gate reads the pull request's own commits
+      # Tests, requirement lines and mutants may be added to; a commit that rewrites one, or that
+      # changes code and tests together, fails here before anything is installed.
+      - name: Existing evidence is append-only, one lane per commit
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bash scripts/check-evidence.sh "origin/$BASE_REF" HEAD
+      - name: The guardrails themselves still work (hooks and evidence gate, simulated input)
+        run: bash scripts/selftest-guards.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
