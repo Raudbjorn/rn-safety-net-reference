@@ -109,7 +109,9 @@ mutation check fails (M2 survives).
   was available here. They use only `launchApp`, `tapOn`, `assertVisible`, `extendedWaitUntil` and
   `setAirplaneMode`, but their syntax, timeouts and selectors are unproven against a real build.
 - `expo prebuild`, the Gradle release build, the emulator job, and `claude-review.yml` have not run.
-  **No workflow has ever executed on GitHub**: nothing was pushed. `actionlint` checks syntax and
+  On GitHub the two gating jobs (`fast`, `rules`) ran for the first time on 2026-11-11, once each: green
+  on `main` and on PR #1, red on the staged draft PR #2 at the mutation check only (M2 survived). The
+  emulator job is skipped on pushes and PRs. `actionlint` checks syntax and
   expressions, not whether the jobs succeed. `scripts/ci-local.sh` runs the same commands as the `fast` and
   `rules` jobs, on this machine's OS, Node 24 and Java 25, not on the runner image; it is a stand-in, and the
   two workflow files were edited after `actionlint` last ran.
@@ -156,7 +158,8 @@ mutation check fails (M2 survives).
 
 **Residual risk this does not remove**
 - Green tests here do not make a different codebase safe; they show the method works on this one.
-- CI is pinned to Java 21 and `ubuntu-24.04`; I ran Java 25 locally, so the Java 21 choice is untested.
+- CI is pinned to Java 21 and `ubuntu-24.04`; I ran Java 25 locally. The `rules` job has passed on Java 21
+  in hosted CI once; the Android job's Java 21 build is still untested.
 - The Gradle release build of React Native 0.88 with the New Architecture was not attempted; it is the
   most likely place for the first CI failure.
 
