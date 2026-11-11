@@ -24,7 +24,9 @@ concurrency:
 
 jobs:
   review:
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    # Opt-in: set the repository variable CLAUDE_REVIEW_ENABLED=true once the ANTHROPIC_API_KEY secret
+    # exists. Without it the job is skipped, not failed, so a missing key never shows as a red check.
+    if: vars.CLAUDE_REVIEW_ENABLED == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:

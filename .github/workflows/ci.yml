@@ -1,5 +1,5 @@
 # Three layers, cheapest first. Only `fast` and `rules` gate a pull request; the emulator job is slow,
-# so it runs on main, nightly and on demand. Every third-party action is pinned to a commit SHA
+# so it runs nightly and on demand. `scripts/ci-local.sh` runs the two gating jobs on one commit locally. Every third-party action is pinned to a commit SHA
 # (the comment is the tag it was resolved from on 2026-11-11).
 name: CI
 
@@ -74,7 +74,9 @@ jobs:
 
   e2e-android:
     name: end to end (Maestro on an Android emulator)
-    if: github.event_name != 'pull_request'
+    # Never yet run (README, Not claimed), so it is kept off pushes to main until it has passed once
+    # on demand: an untested job must not turn main red for reasons unrelated to the change.
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
