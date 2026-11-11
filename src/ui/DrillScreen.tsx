@@ -52,6 +52,18 @@ export function DrillScreen({ queue, vesselId, isOnline }: Props) {
     if (isOnline) await sync();
   };
 
+  // REQ-DRILL-012: the queue only returns the drill to pending; it is sent by the normal sync.
+  const retry = async (id: string) => {
+    const result = await queue.retryRejected(id);
+    refresh();
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setError(null);
+    if (isOnline) await sync();
+  };
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Drill logbook</Text>
@@ -67,7 +79,14 @@ export function DrillScreen({ queue, vesselId, isOnline }: Props) {
       <FlatList
         data={entries}
         keyExtractor={(e) => e.drill.id}
-        renderItem={({ item, index }) => <Text testID={`entry-${index}`}>{label(item)}</Text>}
+        renderItem={({ item, index }) => (
+          <View>
+            <Text testID={`entry-${index}`}>{label(item)}</Text>
+            {item.status === 'rejected' ? (
+              <Button testID={`retry-${index}`} title={`Retry ${item.drill.type}`} onPress={() => void retry(item.drill.id)} />
+            ) : null}
+          </View>
+        )}
       />
     </View>
   );
