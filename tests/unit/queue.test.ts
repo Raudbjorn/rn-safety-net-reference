@@ -305,4 +305,47 @@ describe('DrillQueue.retryRejected', () => {
     expect(store.data.get(STORAGE_KEY)).toBe(storedBefore);
     expect(transport.sent).toHaveLength(1);
   });
+
+  // RAU-9 (review finding F3). MemoryStore writes synchronously, so the test above cannot tell
+  // `await this.persist()` from a write that is merely started. Here a write only lands later, the
+  // way device storage behaves, and `data` holds what is durable at any given moment.
+  const WRITE_DELAY_MS = 5;
+  class SlowStore implements KeyValueStore {
+    data = new Map<string, string>();
+    async getItem(key: string) {
+      return this.data.get(key) ?? null;
+    }
+    async setItem(key: string, value: string) {
+      await new Promise((resolve) => setTimeout(resolve, WRITE_DELAY_MS));
+      this.data.set(key, value);
+    }
+  }
+  const durableStatus = (store: SlowStore, id: string) => {
+    const stored = JSON.parse(store.data.get(STORAGE_KEY) ?? '[]') as { drill: { id: string }; status: string }[];
+    return stored.find((e) => e.drill.id === id)?.status;
+  };
+
+  it('[REQ-DRILL-010] with slow storage, the return to pending is durable before the retry resolves and before anything is sent', async () => {
+    const store = new SlowStore();
+    const durableAtEachSend: (string | undefined)[] = [];
+    const transport = new ScriptedTransport([REFUSAL, { kind: 'stored' }], (d) => {
+      durableAtEachSend.push(durableStatus(store, d.id));
+    });
+    const queue = new DrillQueue(store, transport, ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    expect(durableStatus(store, ID_1)).toBe('rejected');
+
+    await queue.retryRejected(ID_1);
+    const whenRetryResolved = durableStatus(store, ID_1);
+    await queue.flush();
+
+    // One comparison, so a failure reports both moments. Send 0 was the refused attempt; send 1 is
+    // the first network call after the retry.
+    expect(transport.sent).toHaveLength(2);
+    expect({ whenRetryResolved, atSendAfterRetry: durableAtEachSend[1] }).toEqual({
+      whenRetryResolved: 'pending',
+      atSendAfterRetry: 'pending',
+    });
+  });
 });

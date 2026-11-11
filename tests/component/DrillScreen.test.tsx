@@ -147,4 +147,34 @@ describe('DrillScreen retry of a rejected drill', () => {
     await waitFor(() => expect(screen.getByTestId('entry-0')).toHaveTextContent('fire - pending'));
     expect(screen.queryByTestId('retry-0')).toBeNull();
   });
+
+  // RAU-9 (review finding F2). Every press test above has one entry and presses `retry-0`, so a
+  // control wired to the first entry, or to the first rejected entry, would pass them all.
+  it('[REQ-DRILL-012] with two rejected drills, the second retry action retries that drill and only that drill', async () => {
+    const sentTypes: string[] = [];
+    const outcomes: SendResult[] = [REFUSAL, REFUSAL, { kind: 'stored' }];
+    const transport: Transport = {
+      send: async (d: DrillRecord) => {
+        sentTypes.push(d.type);
+        return outcomes.shift() ?? { kind: 'unavailable' };
+      },
+    };
+    let n = 0;
+    const newId = () => `00000000-0000-4000-8000-${String(++n).padStart(12, '0')}`;
+    const queue = new DrillQueue(new MemoryStore(), transport, newId);
+    await render(<DrillScreen queue={queue} vesselId="vessel-1" isOnline={true} />);
+    await fireEvent.press(screen.getByTestId('record-fire'));
+    await waitFor(() => expect(screen.getByTestId('summary')).toHaveTextContent('Pending: 0, Synced: 0, Rejected: 1'));
+    await fireEvent.press(screen.getByTestId('record-abandon-ship'));
+    await waitFor(() => expect(screen.getByTestId('summary')).toHaveTextContent('Pending: 0, Synced: 0, Rejected: 2'));
+
+    await fireEvent.press(screen.getByTestId('retry-1'));
+
+    await waitFor(() => expect(screen.getByTestId('summary')).toHaveTextContent('Pending: 0, Synced: 1, Rejected: 1'));
+    expect(sentTypes).toEqual(['fire', 'abandon-ship', 'abandon-ship']); // the third send is the retried drill
+    expect(screen.getByTestId('entry-1')).toHaveTextContent('abandon-ship - synced');
+    expect(screen.getByTestId('entry-0')).toHaveTextContent(REJECTED_LABEL); // the other drill is untouched
+    expect(screen.getByTestId('retry-0')).toBeOnTheScreen();
+    expect(screen.queryByTestId('retry-1')).toBeNull();
+  });
 });
