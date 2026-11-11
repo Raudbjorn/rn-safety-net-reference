@@ -46,9 +46,10 @@ server          Express gateway with test-only fault hooks (off unless FAULTS=1)
 firestore.rules client-SDK authorisation (REQ-AUTHZ-*)
 tests           unit, component, api, rules
 .maestro        three device flows (offline -> online; lost reply -> retry)
-scripts         check-traceability, fault-inject, e2e.sh
+scripts         check-traceability, fault-inject, e2e.sh, ci-local.sh (the two PR-gating CI jobs on a clean checkout of one commit)
 .github         ci.yml (3 jobs), claude-review.yml (optional)
-.claude         a PreToolUse hook that stops an AI agent editing generated / CI / guardrail files
+.claude         a PreToolUse hook that stops an AI agent editing generated / CI / guardrail files;
+                agents/ (test-author, implementer, reviewer) and commands/linear-issue.md (the orchestration)
 ```
 
 ## Verification record
@@ -75,6 +76,32 @@ Rules tests have a **control** for each kind of denial: the same user, one attri
 succeed. `assertFails` passes on *any* denial, so without controls a typo in the rules would make every
 negative test pass for the wrong reason.
 
+## Agent delivery run (Linear RAU-5, 2026-11-11)
+
+One feature, "manual retry of a rejected drill" (REQ-DRILL-010, 011, 012), was delivered on the branch
+`rau-5-manual-retry-rejected-drill` by Claude subagents working from Linear issues, each inside the role
+in `.claude/agents/`. The orchestrating Claude Code session wrote the issues, dispatched the agents and
+ran `scripts/ci-local.sh` between steps; it wrote no product code or tests. Each agent posted its
+evidence as a comment on its issue.
+
+| Step | Issue | Commit | `scripts/ci-local.sh` on that commit |
+|---|---|---|---|
+| Requirements copied into the spec, 14 failing tests | RAU-6, test-author | `a1153ab` | red, as intended: typecheck (9 errors on the missing method), jest (14 new failed, 25 passed), mutation check refused to run on a red baseline |
+| `DrillQueue.retryRejected` | RAU-7, implementer | `f52373c` | not run (the screen tests were still red by design) |
+| Retry control on the screen | RAU-8, implementer | `864abef` | green, 8 of 8 steps, 9 of 9 mutations killed |
+| Independent review | RAU-5, reviewer | none | **changes requested**: 29 hand-made mutants in a throwaway worktree, 25 killed, 4 survived while the pipeline was green |
+| Two tests for the surviving mutants | RAU-9, test-author | `bfed245` | green, 8 of 8 steps |
+| Re-review | RAU-5, reviewer | none | **approve**, explicitly not covering the open decision in RAU-10 |
+
+Left for a person: RAU-10 (a retry pressed while a sync is running waits for the next sync trigger;
+`record` on `main` behaves the same), RAU-11 (storage failure during a retry throws instead of returning
+an error value; refused-retry message untested; no mutants for the three new requirements in
+`scripts/fault-inject.ts`), and the merge itself.
+
+The branch `staged/weakened-assertion` is a deliberate counter-example, labelled as staged in its commit
+message: it loosens one assertion for REQ-DRILL-006. Typecheck, lint and every test pass; only the
+mutation check fails (M2 survives).
+
 ## Not claimed
 
 **Not run at all**
@@ -83,7 +110,9 @@ negative test pass for the wrong reason.
   `setAirplaneMode`, but their syntax, timeouts and selectors are unproven against a real build.
 - `expo prebuild`, the Gradle release build, the emulator job, and `claude-review.yml` have not run.
   **No workflow has ever executed on GitHub**: nothing was pushed. `actionlint` checks syntax and
-  expressions, not whether the jobs succeed.
+  expressions, not whether the jobs succeed. `scripts/ci-local.sh` runs the same commands as the `fast` and
+  `rules` jobs, on this machine's OS, Node 24 and Java 25, not on the runner image; it is a stand-in, and the
+  two workflow files were edited after `actionlint` last ran.
 - iOS. `setAirplaneMode` is Android-only in Maestro, so flow 02 has no iOS equivalent here.
 - The hook was tested as a script with simulated input, not through Claude Code.
 - The hook deliberately does **not** block `tests/` or `specs/`: an agent has to write tests alongside the
@@ -93,6 +122,17 @@ negative test pass for the wrong reason.
   control and is not set up.
 
 **What the evidence does not prove**
+- The agent run was one run, on one machine, on one small feature. It says nothing about how often a
+  run goes this way.
+- The role boundaries (the test author does not touch `src/`, implementers do not touch `tests/` or
+  `specs/`, the reviewer does not commit) were **instructions, checked afterwards by diff, not enforced**.
+  The subagents ran under a Claude Code session whose project directory was not this repo, so the
+  `.claude` hook did not apply to them.
+- Every Linear action was made with the repo owner's own login, so Linear shows one author; the agents
+  signed their comments with their role. Nothing was triggered from Linear: a session read the issues.
+  The orchestrator, not a person, wrote the requirement text in RAU-5.
+- The reviewer's 29 mutants were applied by hand in a scratch worktree and discarded. Nothing re-checks
+  them; the pipeline's own mutation check does not cover REQ-DRILL-010 to 012 (RAU-11).
 - `scripts/e2e.sh` was smoke-tested with shims that imitate the app. That checks its gateway start-up,
   fault arming, record count and cleanup. It says nothing about the app or Maestro.
 - The Maestro flows are listed in `specs/TRACE.md` but the traceability gate does **not** count them as
@@ -127,4 +167,4 @@ negative test pass for the wrong reason.
 - `firebase-tools` downloads the Firestore emulator jar to `~/.cache/firebase/emulators` on first use.
 - CI downloads Maestro 2.12.1 (~350 MB) and verifies its SHA-256 before use.
 - `claude-review.yml` needs an `ANTHROPIC_API_KEY` secret. Use a key from a dedicated Console workspace with
-  its own spend limit. Without the secret the job fails; it gates nothing.
+  its own spend limit. The job is skipped unless the repository variable `CLAUDE_REVIEW_ENABLED` is `true`; it gates nothing.
