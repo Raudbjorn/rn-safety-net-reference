@@ -159,3 +159,150 @@ describe('DrillQueue', () => {
     expect(queue.snapshot()).toEqual([]);
   });
 });
+
+// RAU-5 / RAU-6: manual retry of a rejected drill. `retryRejected(id)` returns a Result (an error
+// value, never an exception). Decisions fixed in RAU-5 and tested under REQ-DRILL-010: the retry
+// clears the stored rejection reason, keeps the attempts count, and never sends by itself (the drill
+// leaves the device through the normal flush).
+describe('DrillQueue.retryRejected', () => {
+  const REFUSAL: SendResult = { kind: 'rejected', reason: 'gateway refused the drill (HTTP 422)' };
+
+  it('[REQ-DRILL-010] a retried drill returns to pending under the same id, in its original position', async () => {
+    const transport = new ScriptedTransport([{ kind: 'stored' }, REFUSAL, { kind: 'stored' }]);
+    const queue = new DrillQueue(new MemoryStore(), transport, ids(ID_1, ID_2, ID_3));
+    await queue.record(input('fire'));
+    await queue.record(input('abandon-ship'));
+    await queue.record(input('man-overboard'));
+    await queue.flush();
+    expect(queue.snapshot().map((e) => e.status)).toEqual(['synced', 'rejected', 'synced']);
+
+    const result = await queue.retryRejected(ID_2);
+
+    expect(result.ok).toBe(true);
+    expect(queue.snapshot().map((e) => e.drill.id)).toEqual([ID_1, ID_2, ID_3]);
+    expect(queue.snapshot().map((e) => e.status)).toEqual(['synced', 'pending', 'synced']);
+  });
+
+  it('[REQ-DRILL-010] the return to pending is persisted before any network call', async () => {
+    const store = new MemoryStore();
+    const transport = new ScriptedTransport([REFUSAL]);
+    const queue = new DrillQueue(store, transport, ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    expect(transport.sent).toHaveLength(1);
+
+    await queue.retryRejected(ID_1);
+
+    // Read back through a fresh queue on the same store: what an app restart would find.
+    const afterRestart = new DrillQueue(store, new ScriptedTransport([]), ids(ID_2));
+    const entries = await afterRestart.load();
+    expect(entries.map((e) => [e.drill.id, e.status])).toEqual([[ID_1, 'pending']]);
+    expect(transport.sent).toHaveLength(1); // the retry itself sent nothing
+  });
+
+  it('[REQ-DRILL-010] a retry clears the stored rejection reason', async () => {
+    const queue = new DrillQueue(new MemoryStore(), new ScriptedTransport([REFUSAL]), ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    expect(queue.snapshot()[0]?.reason).toContain('422');
+
+    await queue.retryRejected(ID_1);
+
+    expect(queue.snapshot()[0]?.reason).toBeUndefined();
+  });
+
+  it('[REQ-DRILL-010] a retry keeps the attempts count', async () => {
+    const queue = new DrillQueue(new MemoryStore(), new ScriptedTransport([REFUSAL]), ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    expect(queue.snapshot()[0]?.attempts).toBe(1);
+
+    await queue.retryRejected(ID_1);
+
+    expect(queue.snapshot()[0]?.attempts).toBe(1);
+  });
+
+  it('[REQ-DRILL-010] a retried drill is sent by the next flush under the same id and ends synchronised', async () => {
+    const transport = new ScriptedTransport([REFUSAL, { kind: 'stored' }]);
+    const queue = new DrillQueue(new MemoryStore(), transport, ids(ID_1, ID_2));
+    await queue.record(input());
+    await queue.flush();
+
+    await queue.retryRejected(ID_1);
+    await queue.flush();
+
+    expect(transport.sent.map((d) => d.id)).toEqual([ID_1, ID_1]);
+    expect(queue.snapshot()[0]?.status).toBe('synced');
+  });
+
+  it('[REQ-DRILL-010] a retried drill is sent ahead of drills recorded after it', async () => {
+    // First flush: ID_1 is refused, ID_2 hits an unavailable network, ID_3 is never attempted.
+    const transport = new ScriptedTransport([REFUSAL, { kind: 'unavailable' }]);
+    const queue = new DrillQueue(new MemoryStore(), transport, ids(ID_1, ID_2, ID_3));
+    await queue.record(input('fire'));
+    await queue.record(input('abandon-ship'));
+    await queue.record(input('man-overboard'));
+    await queue.flush();
+    expect(queue.snapshot().map((e) => e.status)).toEqual(['rejected', 'pending', 'pending']);
+    const sentBeforeRetry = transport.sent.length;
+
+    await queue.retryRejected(ID_1);
+    await queue.flush();
+
+    // Original position in the recorded order, so REQ-DRILL-004 still holds after a retry.
+    expect(transport.sent.slice(sentBeforeRetry).map((d) => d.id)).toEqual([ID_1, ID_2, ID_3]);
+  });
+
+  it('[REQ-DRILL-011] refuses a retry for an unknown id and changes nothing', async () => {
+    const store = new MemoryStore();
+    const transport = new ScriptedTransport([REFUSAL]);
+    const queue = new DrillQueue(store, transport, ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    const entriesBefore = queue.snapshot();
+    const storedBefore = store.data.get(STORAGE_KEY);
+
+    const result = await queue.retryRejected(ID_2);
+
+    expect(result.ok).toBe(false);
+    expect(queue.snapshot()).toEqual(entriesBefore); // the rejected drill it did not name is untouched
+    expect(store.data.get(STORAGE_KEY)).toBe(storedBefore);
+    expect(transport.sent).toHaveLength(1);
+  });
+
+  it('[REQ-DRILL-011] refuses a retry for a pending drill and changes nothing', async () => {
+    const store = new MemoryStore();
+    const transport = new ScriptedTransport([{ kind: 'unavailable' }]);
+    const queue = new DrillQueue(store, transport, ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    const entriesBefore = queue.snapshot();
+    const storedBefore = store.data.get(STORAGE_KEY);
+    expect(entriesBefore[0]?.status).toBe('pending');
+
+    const result = await queue.retryRejected(ID_1);
+
+    expect(result.ok).toBe(false);
+    expect(queue.snapshot()).toEqual(entriesBefore);
+    expect(store.data.get(STORAGE_KEY)).toBe(storedBefore);
+    expect(transport.sent).toHaveLength(1);
+  });
+
+  it('[REQ-DRILL-011] refuses a retry for a synchronised drill and changes nothing', async () => {
+    const store = new MemoryStore();
+    const transport = new ScriptedTransport([{ kind: 'stored' }]);
+    const queue = new DrillQueue(store, transport, ids(ID_1));
+    await queue.record(input());
+    await queue.flush();
+    const entriesBefore = queue.snapshot();
+    const storedBefore = store.data.get(STORAGE_KEY);
+    expect(entriesBefore[0]?.status).toBe('synced');
+
+    const result = await queue.retryRejected(ID_1);
+
+    expect(result.ok).toBe(false);
+    expect(queue.snapshot()).toEqual(entriesBefore);
+    expect(store.data.get(STORAGE_KEY)).toBe(storedBefore);
+    expect(transport.sent).toHaveLength(1);
+  });
+});

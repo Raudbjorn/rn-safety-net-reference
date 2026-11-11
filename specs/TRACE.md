@@ -16,3 +16,6 @@
 | REQ-DRILL-007 | If the gateway refuses a drill permanently, then the app shall mark it rejected, shall not retry it automatically, and shall show the reason. | `tests/api/gateway.test.ts`<br>`tests/unit/httpTransport.test.ts`<br>`tests/unit/queue.test.ts` |  |
 | REQ-DRILL-008 | While a drill is pending or rejected, the app shall display it distinctly from synchronised drills. | `tests/component/DrillScreen.test.tsx` |  |
 | REQ-DRILL-009 | If a drill has missing or malformed fields, then the app shall refuse it and shall not persist it. | `tests/unit/queue.test.ts` |  |
+| REQ-DRILL-010 | When the user retries a rejected drill, the app shall return it to pending under the same id and in its original position in the recorded order, and shall persist that change before any network call. | `tests/component/DrillScreen.test.tsx`<br>`tests/unit/queue.test.ts` |  |
+| REQ-DRILL-011 | If a retry is requested for a drill that is not rejected, then the app shall refuse the request and shall change nothing. | `tests/unit/queue.test.ts` |  |
+| REQ-DRILL-012 | While a drill is rejected, the app shall offer a retry action for that drill, and shall offer none for pending or synchronised drills. | `tests/component/DrillScreen.test.tsx` |  |
