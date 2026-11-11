@@ -20,10 +20,13 @@ Patterns: *ubiquitous* ("The X shall..."), *event-driven* ("When..."), *state-dr
 - **REQ-DRILL-005** The gateway shall create at most one drill record per id, however many times that id is submitted.
 - **REQ-DRILL-006** If the gateway stores a drill but the reply is lost, then the retry shall leave exactly one stored record and the app shall then mark the drill synchronised.
 - **REQ-DRILL-007** If the gateway refuses a drill permanently, then the app shall mark it rejected, shall not retry it automatically, and shall show the reason.
+- **REQ-DRILL-010** When the user retries a rejected drill, the app shall return it to pending under the same id and in its original position in the recorded order, and shall persist that change before any network call.
+- **REQ-DRILL-011** If a retry is requested for a drill that is not rejected, then the app shall refuse the request and shall change nothing.
 
 ## Presentation
 
 - **REQ-DRILL-008** While a drill is pending or rejected, the app shall display it distinctly from synchronised drills.
+- **REQ-DRILL-012** While a drill is rejected, the app shall offer a retry action for that drill, and shall offer none for pending or synchronised drills.
 
 ## Authorisation (data layer)
 

@@ -83,6 +83,25 @@ export class DrillQueue {
     return { ok: true, value: { ...entry, drill: { ...entry.drill } } };
   }
 
+  /**
+   * REQ-DRILL-010: a rejected drill goes back to pending under the same id and in its original
+   * position, durably, and nothing is sent here: it leaves the device through the normal flush.
+   * REQ-DRILL-011: any other request (unknown id, pending, synced) is refused and changes nothing.
+   */
+  async retryRejected(id: string): Promise<Result<QueueEntry, string>> {
+    await this.load();
+    const entry = this.entries.find((e) => e.drill.id === id);
+    if (!entry) return { ok: false, error: `no drill with id ${id}` };
+    if (entry.status !== 'rejected') {
+      return { ok: false, error: `drill ${id} is ${entry.status}; only a rejected drill can be retried` };
+    }
+
+    entry.status = 'pending'; // edited in place: same id, same position, attempts kept
+    delete entry.reason;
+    await this.persist(); // REQ-DRILL-010: durable before any network call
+    return { ok: true, value: { ...entry, drill: { ...entry.drill } } };
+  }
+
   /** Concurrent callers share one flush, so a drill is never sent twice in parallel. */
   flush(): Promise<FlushSummary> {
     if (this.inFlight) return this.inFlight;
