@@ -3,6 +3,7 @@
 # clean checkout of ONE commit, so uncommitted files and leftover local state cannot make it pass.
 #
 #   scripts/ci-local.sh [ref]        default ref: HEAD
+#   CI_LOCAL_BASE=<ref>              what the evidence gate compares against (default: main)
 #
 # A stand-in for the hosted run, not a replacement: the commands are the same, the machine is not
 # (this host's OS, Node and Java instead of the runner image). Every step runs even after a failure,
@@ -51,12 +52,28 @@ step() {
   echo "${summary[-1]}"
 }
 
+skip() {
+  summary+=("$(printf '%-4s  %-5s  %-34s' SKIP "$1" "$2")")
+  echo "${summary[-1]}"
+}
+
 trace_is_current() {
   npm run --silent trace:write && git diff --exit-code specs/TRACE.md
 }
 
+base="${CI_LOCAL_BASE:-main}"
+
 echo "ci-local: commit ${sha:0:12} ($(git -C "$root" log -1 --format=%s "$sha"))"
 
+# The evidence gate is taken from the checkout this script was started in, not from the commit under
+# test: a commit must not be judged by its own copy of the gate. The self-test is the commit's own,
+# because it tests that commit's guardrails; commits older than the self-test skip it.
+step fast 'evidence append-only, lanes' "$root/scripts/check-evidence.sh" "$base" "$sha"
+if [ -f scripts/selftest-guards.sh ]; then
+  step fast 'guardrail self-test' bash scripts/selftest-guards.sh
+else
+  skip fast 'guardrail self-test (not in commit)'
+fi
 step fast 'npm ci' npm ci --no-audit --no-fund
 step fast 'typecheck' npm run --silent typecheck
 step fast 'lint' npm run --silent lint
